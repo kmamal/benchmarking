@@ -1,0 +1,17 @@
+#!/usr/bin/env -S taskset 01 node --expose-gc
+
+const { Matcher } = require('@kmamal/globs/matcher')
+const { defaultRunner } = require('../src/runner')
+
+const matcher = new Matcher([
+	'**/*.benchmark.js',
+	'**/*.benchmark.mjs',
+	'!node_modules/',
+])
+
+;(async () => {
+	for await (const file of matcher.getFiles()) {
+		await defaultRunner.appendFile(file.path)
+	}
+	defaultRunner.finish()
+})()
