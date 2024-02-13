@@ -23,7 +23,7 @@ const makeOption = (x) => ({ name: x, value: x })
 
 const toTable = (keys, record) => {
 	const { length } = keys
-	const firstValue = `${record[keys[0]]}`.padEnd(10)
+	const firstValue = `${record[keys[0]]} `.padStart(10)
 	const otherValues = new Array(length - 1)
 	for (let i = 1; i < length; i++) {
 		otherValues[i - 1] = record[keys[i]]
@@ -74,15 +74,7 @@ class BenchmarkRunner {
 		const cases = []
 		{
 			for (const [ name, callback ] of Object.entries(_c)) {
-				const preData = pre ? pre() : null
-				const elapsed = time(() => callback(preData))
-				post && post(preData)
-
-				if (elapsed * 10 <= timePerCase) {
-					cases.push({ name, callback })
-				} else {
-					console.warn("WARN", 'too slow', { name })
-				}
+				cases.push({ name, callback })
 			}
 
 			const numCases = cases.length
@@ -100,9 +92,23 @@ class BenchmarkRunner {
 		for (const { name, callback } of cases) {
 			const preData = pre ? pre() : null
 
-			// Warmup
+			// Prepare
 			global.gc(true)
-			for (let i = 0; i < 10; i++) { callback(preData) }
+
+			// Warmup
+			const warmupTime = time(() => callback(preData))
+
+			if (warmupTime > timePerCase) {
+				console.log(toTable(Object.keys(labels), { case: name, result: 0 }))
+				post && post(preData)
+				continue
+			}
+
+			if (warmupTime * 2 > timePerCase) {
+				console.log(toTable(Object.keys(labels), { case: name, result: 1 }))
+				post && post(preData)
+				continue
+			}
 
 			// Measure
 			const { elapsed, reps } = await amrap((n) => {
@@ -158,16 +164,7 @@ class BenchmarkRunner {
 
 				const values = map(options, ({ value }) => value)
 				const data = zipObject(parameterKeys, values)
-
-				const preData = pre ? pre(data) : null
-				const elapsed = time(() => callback(data, preData))
-				post && post(preData)
-
-				if (elapsed * 10 <= timePerCase) {
-					cases.push({ info, data })
-				} else {
-					console.warn("WARN", 'too slow', { data: info })
-				}
+				cases.push({ info, data })
 			}
 
 			const numCases = cases.length
@@ -177,18 +174,32 @@ class BenchmarkRunner {
 			}
 		}
 
-		if (numParameters > 1) {
-			console.log(toTable(Object.keys(labels), labels))
-		}
+
+		const lastKey = parameterKeys.at(-1)
+		const lastValue = parameterOptions.at(-1).at(-1).value
 
 		for (const c of cases) {
 			const { info, data } = c
 
 			const preData = pre ? pre(data) : null
 
-			// Warmup
+			// Prepare
 			global.gc(true)
-			for (let i = 0; i < 10; i++) { callback(data, preData) }
+
+			// Warmup
+			const warmupTime = time(() => callback(data, preData))
+
+			if (warmupTime > timePerCase) {
+				console.log(toTable(Object.keys(labels), { ...info, result: 0 }))
+				post && post(preData)
+				continue
+			}
+
+			if (warmupTime * 2 > timePerCase) {
+				console.log(toTable(Object.keys(labels), { ...info, result: 1 }))
+				post && post(preData)
+				continue
+			}
 
 			// Measure
 			const { elapsed, reps } = await amrap((n) => {
@@ -202,6 +213,11 @@ class BenchmarkRunner {
 			const correctionFactor = timePerCase / elapsed
 			const result = Math.floor(reps * correctionFactor)
 			console.log(toTable(Object.keys(labels), { ...info, result }))
+
+			// Separate cases
+			if (numParameters > 1 && data[lastKey] === lastValue) {
+				console.log()
+			}
 		}
 	}
 
